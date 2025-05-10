@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard - {{ username }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .chat-box { height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: #f8f9fa; }
+        .chat-box img { max-width: 100%; height: auto; margin-top: 10px; }
+        .message { margin-bottom: 10px; }
+        .user-message { text-align: right; }
+        .bot-message { text-align: left; }
+        .error-message { color: red; margin-top: 10px; }
+        .progress-container { margin-top: 20px; }
+
+        .active-mode { 
+            background-color: #28a745; /* Green to indicate active, adjust as needed */
+            border-color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome, {{ username }}</h1>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">Logout</a>
+        
+        <h2>Upload PDF</h2>
+        <form id="upload-form" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".pdf" required>
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </form>
+        
+        <div id="pdf-progress-container" class="progress-container" style="display: none;">
+            <h3>PDF Processing</h3>
+            <div id="pdf-progress-step" class="mb-2"></div>
+            <div id="pdf-progress-bar" class="progress">
+                <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <div id="pdf-progress-error" class="error-message"></div>
+        </div>
+        
+        <h2>Your PDFs</h2>
+        <ul>
+            {% for pdf in pdfs %}
+                <li>{{ pdf }} <form method="POST" style="display:inline;"><input type="hidden" name="delete" value="{{ pdf }}"><button type="submit" class="btn btn-danger btn-sm">Delete</button></form></li>
+            {% endfor %}
+        </ul>
+        
+        <h2>Chat</h2>
+        <div class="chat-box" id="chat-box"></div>
+        <div id="chat-progress-container" class="progress-container" style="display: none;">
+            <h3>Chat Processing</h3>
+            <div id="chat-progress-step" class="mb-2"></div>
+            <div id="chat-progress-bar" class="progress">
+                <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <div id="chat-progress-error" class="error-message"></div>
+        </div>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" id="query-input" placeholder="Ask about your PDFs...">
+            <button class="btn btn-primary" id="image-match-btn">Image Match</button>
+            <button class="btn btn-primary" id="text-match-btn">Text Match</button>
+            <button class="btn btn-primary" id="image-text-match-btn">Image+Text Match</button>
+        </div>
+    </div>
+
+    <script>
+        const uploadForm = document.getElementById("upload-form");
+        const pdfProgressContainer = document.getElementById("pdf-progress-container");
+        const pdfProgressStep = document.getElementById("pdf-progress-step");
+        const pdfProgressBar = document.getElementById("pdf-progress-bar");
+        const pdfProgressError = document.getElementById("pdf-progress-error");
+        const chatBox = document.getElementById("chat-box");
+        const chatProgressContainer = document.getElementById("chat-progress-container");
+        const chatProgressStep = document.getElementById("chat-progress-step");
+        const chatProgressBar = document.getElementById("chat-progress-bar");
+        const chatProgressError = document.getElementById("chat-progress-error");
+        const queryInput = document.getElementById("query-input");
+        const imageMatchBtn = document.getElementById("image-match-btn");
+        const textMatchBtn = document.getElementById("text-match-btn");
+        const imageTextMatchBtn = document.getElementById("image-text-match-btn");
+        let currentPdfTaskId = null;
+        let currentChatTaskId = null;
+        let currentMode = "image+text";  // Default mode
+    
+        // Function to reset button styles and set the active one
+        function setActiveButton(activeBtn) {
+            [imageMatchBtn, textMatchBtn, imageTextMatchBtn].forEach(btn => {
+                btn.classList.remove("active-mode");
+            });
+            activeBtn.classList.add("active-mode");
+        }
+    
+        // Set initial active button (Image+Text Match by default)
+        setActiveButton(imageTextMatchBtn);
+    
+        // PDF Processing
+        uploadForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const formData = new FormData(uploadForm);
+            const response = await fetch("/dashboard", {
+                method: "POST",
+                body: formData
+            });
+            const data = await response.json();
+            if (data.message === "Processing started") {
+                currentPdfTaskId = data.task_id;
+                pdfProgressContainer.style.display = "block";
+                pdfProgressError.textContent = "";
+                checkPdfProgress();
+            }
+        });
+    
+        function checkPdfProgress() {
+            fetch("/progress" + (currentPdfTaskId ? `?task_id=${currentPdfTaskId}` : ""))
+                .then(response => response.json())
+                .then(data => {
+                    if (data.task_id) {
+                        currentPdfTaskId = data.task_id;
+                        pdfProgressContainer.style.display = "block";
+                        pdfProgressStep.textContent = `Step: ${data.step} (Task ID: ${data.task_id})`;
+                        const percent = data.total ? (data.progress / data.total) * 100 : 0;
+                        pdfProgressBar.children[0].style.width = `${percent}%`;
+                        pdfProgressBar.children[0].textContent = `${Math.round(percent)}%`;
+                        if (data.error) {
+                            pdfProgressError.textContent = `Error: ${data.error}`;
+                        }
+                        if (!data.done) {
+                            setTimeout(checkPdfProgress, 500);
+                        } else if (!data.error) {
+                            pdfProgressContainer.style.display = "none";
+                            uploadForm.reset();
+                            currentPdfTaskId = null;
+                        }
+                    }
+                });
+        }
+    
+        // Chat Processing
+        function startChatQuery() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+            chatBox.innerHTML += `<div class="message user-message"><strong>You:</strong> ${query} (${currentMode})</div>`;
+            queryInput.value = "";
+            chatBox.scrollTop = chatBox.scrollHeight;
+    
+            fetch("/chat", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({query, mode: currentMode})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message === "Chat processing started") {
+                    currentChatTaskId = data.task_id;
+                    chatProgressContainer.style.display = "block";
+                    chatProgressError.textContent = "";
+                    checkChatProgress();
+                }
+            });
+        }
+    
+        // Button event listeners to set mode only
+        imageMatchBtn.addEventListener("click", () => {
+            setActiveButton(imageMatchBtn);
+            currentMode = "image";
+        });
+        textMatchBtn.addEventListener("click", () => {
+            setActiveButton(textMatchBtn);
+            currentMode = "text";
+        });
+        imageTextMatchBtn.addEventListener("click", () => {
+            setActiveButton(imageTextMatchBtn);
+            currentMode = "image+text";
+        });
+    
+        // Send query on Enter key
+        queryInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                startChatQuery();
+            }
+        });
+        function checkChatProgress() {
+            if (!currentChatTaskId) return;
+            if (!chatBox) {
+                console.error("chatBox element not found!");
+                return;
+            }
+            fetch(`/chat_progress?task_id=${currentChatTaskId}`)
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Chat Progress Response:", data);
+                    chatProgressStep.textContent = `Step: ${data.step} (Task ID: ${data.task_id})`;
+                    const percent = data.total ? (data.progress / data.total) * 100 : 0;
+                    chatProgressBar.children[0].style.width = `${percent}%`;
+                    chatProgressBar.children[0].textContent = `${Math.round(percent)}%`;
+                    if (data.done) {
+                        console.log("Task done, error:", data.error, "response:", data.response);
+                        if (data.error) {
+                            const errorDiv = document.createElement("div");
+                            errorDiv.className = "message bot-message";
+                            errorDiv.innerHTML = `<strong>Bot:</strong> Error: ${data.error}`;
+                            chatBox.appendChild(errorDiv);
+                        } else {
+                            const responseText = data.response || "No response generated.";
+                            const messageDiv = document.createElement("div");
+                            messageDiv.className = "message bot-message";
+                            messageDiv.innerHTML = `<strong>Bot:</strong> ${responseText}`;
+                            chatBox.appendChild(messageDiv);
+                            if (data.images && Array.isArray(data.images)) {
+                                data.images.forEach(img => {
+                                    const imgElement = document.createElement("img");
+                                    imgElement.src = img;
+                                    imgElement.alt = "Textbook Image";
+                                    imgElement.className = "img-fluid";
+                                    chatBox.appendChild(imgElement);
+                                });
+                            }
+                        }
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                        chatProgressContainer.style.display = "none";
+                        currentChatTaskId = null;
+                    }
+                    if (!data.done) {
+                        setTimeout(checkChatProgress, 500);
+                    }
+                })
+                .catch(error => {
+                    console.error("Fetch Error:", error);
+                    chatProgressError.textContent = `Fetch error: ${error.message}`;
+                });
+        }
+        // Check for ongoing tasks on page load
+        window.addEventListener("load", () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pdfTaskId = urlParams.get("task_id");
+            const chatTaskId = urlParams.get("chat_task_id");
+            
+            if (pdfTaskId) {
+                currentPdfTaskId = parseInt(pdfTaskId);
+                pdfProgressContainer.style.display = "block";
+                checkPdfProgress();
+            } else {
+                checkPdfProgress();  // Check for any ongoing task
+            }
+            if (chatTaskId) {
+                currentChatTaskId = parseInt(chatTaskId);
+                chatProgressContainer.style.display = "block";
+                checkChatProgress();
+            }
+        });
+    </script>
+</body>
+</html>
