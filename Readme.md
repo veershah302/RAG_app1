@@ -106,7 +106,7 @@ Highlighting the sample images, depicting functionality:
 ![signing up](<WhatsApp Image 2025-04-09 at 14.33.37_bafd46c9.jpg>)
 ![Login](<WhatsApp Image 2025-04-09 at 14.33.27_3aba67d0.jpg>)  
 ![Uploading PDF's of Backpropagation and Activation Functions](<WhatsApp Image 2025-04-09 at 14.34.15_24fe88ae.jpg>)
-![Picture Identification- Sir](<WhatsApp Image 2025-04-09 at 14.33.04_23d21a83.jpg>)
+
 ![ONLY IMAGE: Asking about ReLU Activation Function](<WhatsApp Image 2025-04-09 at 14.30.44_fdd1513a.jpg>)
 ![IMAGE and TEXT: Asking about ReLU Activation Function](<WhatsApp Image 2025-04-09 at 14.31.34_9332ed91.jpg>)
 ![TEXT- Asking about Backpropogation](<WhatsApp Image 2025-04-09 at 14.32.32_b041c75a.jpg>)
